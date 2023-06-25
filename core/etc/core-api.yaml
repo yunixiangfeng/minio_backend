@@ -1,0 +1,19 @@
+Name: core-api
+Host: 0.0.0.0
+Port: 8888
+MaxBytes: 8388608
+
+# DataBase:
+#   Type: "mysql"
+#   Url: "root:password@tcp(mysql:3306)/cloud-disk?charset=utf8"
+#   MaxIdleConns: 10
+#   MaxOpenConns: 20
+#   #是否显示sql语句
+#   ShowSql: true
+Mysql:
+  DataSource: root:1234@tcp(192.168.204.130:3306)/minio-backend?charset=utf8mb4&parseTime=True&loc=Local
+
+Redis:
+  Addr: localhost:6379
+  Password: "mima"
+  PoolSize: 10
