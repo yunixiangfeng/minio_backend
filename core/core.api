@@ -72,6 +72,41 @@ service core-api {
 	@handler FileUploadPrepare
 	post /file/upload/prepare(FileUploadPrepareRequest) returns (FileUploadPrepareReply)
 	
+	// 文件分片上传
+	@handler FileUploadChunk
+	post /file/upload/chunk(FileUploadChunkRequest) returns (FileUploadChunkReply)
+	
+	// 文件分片上传完成
+	@handler FileUploadChunkComplete
+	post /file/upload/chunk/complete(FileUploadChunkCompleteRequest) returns (FileUploadChunkCompleteReply)
+	
+}
+
+type FileUploadChunkRequest { // formdata
+	// upload_id
+	// part_number
+}
+
+type FileUploadChunkReply {
+	Etag string `json:"etag"` // MD5
+}
+
+type FileUploadChunkCompleteRequest {
+	Md5          string        `json:"md5"`
+	Name         string        `json:"name"`
+	Ext          string        `json:"ext"`
+	Size         int64         `json:"size"`
+	UploadId     string        `json:"upload_id"`
+	MinioObjects []MinioObject `json:"Minio_objects"`
+}
+
+type MinioObject {
+	PartNumber int    `json:"part_number"`
+	Etag       string `json:"etag"`
+}
+
+type FileUploadChunkCompleteReply {
+	Identity string `json:"identity"` // 存储池identity
 }
 
 type FileUploadPrepareRequest {
@@ -83,7 +118,6 @@ type FileUploadPrepareRequest {
 type FileUploadPrepareReply {
 	Identity string `json:"identity"`
 	UploadId string `json:"upload_id"`
-	Key      string `json:"key"`
 }
 
 type RefreshAuthorizationRequest {}

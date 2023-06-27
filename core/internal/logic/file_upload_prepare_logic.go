@@ -3,8 +3,10 @@ package logic
 import (
 	"context"
 
+	"core/helper"
 	"core/internal/svc"
 	"core/internal/types"
+	"core/models"
 
 	"github.com/zeromicro/go-zero/core/logx"
 )
@@ -24,7 +26,24 @@ func NewFileUploadPrepareLogic(ctx context.Context, svcCtx *svc.ServiceContext) 
 }
 
 func (l *FileUploadPrepareLogic) FileUploadPrepare(req *types.FileUploadPrepareRequest) (resp *types.FileUploadPrepareReply, err error) {
-	// todo: add your logic here and delete this line
+	rp := new(models.RepositoryPool)
+	has, err := l.svcCtx.Engine.Where("hash = ?", req.Md5).Get(rp)
+	if err != nil {
+		return
+	}
+	resp = new(types.FileUploadPrepareReply)
+	if has {
+		// 秒传成功
+		resp.Identity = rp.Identity
+	} else {
+		// 获取该文件的UploadID,用来进行文件的分片上传
+		key, uploadId, err := helper.MinioInitPart(req.Ext)
+		if err != nil {
+			return nil, err
+		}
+		resp.Key = key
+		resp.UploadId = uploadId
+	}
 
 	return
 }
