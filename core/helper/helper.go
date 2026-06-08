@@ -72,7 +72,7 @@ func MailSendCode(mail, code string) error {
 	e.From = "云盘 <535504958@qq.com>"
 	e.To = []string{mail}
 	e.Subject = "验证码发送测试"
-	e.HTML = []byte(fmt.Sprintf("<pre style=\"font-family:Helvetica,arial,sans-serif;font-size:13px;color:#747474;text-align:left;line-height:18px\">欢迎使用水牛云盘，您的验证码为：<span style=\"font-size:block\">%s</span></pre>", code))
+	e.HTML = []byte(fmt.Sprintf("<pre style=\"font-family:Helvetica,arial,sans-serif;font-size:13px;color:#747474;text-align:left;line-height:18px\">欢迎使用MinIO云盘，您的验证码为：<span style=\"font-size:block\">%s</span></pre>", code))
 	err := e.SendWithTLS("smtp.163.com:465", smtp.PlainAuth("", "535504958@qq.com", define.MailPassword, "smtp.163.com"),
 		&tls.Config{InsecureSkipVerify: true, ServerName: "smtp.163.com"})
 	if err != nil {
