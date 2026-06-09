@@ -35,9 +35,13 @@ func (l *FileUploadChunkCompleteLogic) FileUploadChunkComplete(req *types.FileUp
 			PartNumber: v.PartNumber,
 		})
 	}
-	err = helper.MinioPartUploadComplete(req.Key, req.UploadId, mo)
 
-	// 数据入库
+	// 合并分片（key 即为 MinioInitPart 返回的 objectName，完整路径）
+	if err = helper.MinioPartUploadComplete(req.Key, req.UploadId, mo); err != nil {
+		return nil, err
+	}
+
+	// 数据入库，Path = bucket/objectName，与普通上传格式一致
 	rp := &models.RepositoryPool{
 		Identity: helper.UUID(),
 		Hash:     req.Md5,
@@ -46,6 +50,12 @@ func (l *FileUploadChunkCompleteLogic) FileUploadChunkComplete(req *types.FileUp
 		Size:     req.Size,
 		Path:     define.MinIOBucket + "/" + req.Key,
 	}
-	l.svcCtx.Engine.Insert(rp)
+	if _, err = l.svcCtx.Engine.Insert(rp); err != nil {
+		return nil, err
+	}
+
+	resp = &types.FileUploadChunkCompleteReply{
+		Identity: rp.Identity,
+	}
 	return
 }

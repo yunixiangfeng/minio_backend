@@ -66,17 +66,28 @@ func AnalyzeToken(token string) (*define.UserClaim, error) {
 }
 
 // MailSendCode
-// 邮箱验证码发送
+// 邮箱验证码发送（使用QQ邮箱 SMTP SSL）
 func MailSendCode(mail, code string) error {
 	e := email.NewEmail()
-	e.From = "云盘 <535504958@qq.com>"
+	e.From = "MinIO云盘 <535504958@qq.com>"
 	e.To = []string{mail}
-	e.Subject = "验证码发送测试"
-	e.HTML = []byte(fmt.Sprintf("<pre style=\"font-family:Helvetica,arial,sans-serif;font-size:13px;color:#747474;text-align:left;line-height:18px\">欢迎使用MinIO云盘，您的验证码为：<span style=\"font-size:block\">%s</span></pre>", code))
-	err := e.SendWithTLS("smtp.163.com:465", smtp.PlainAuth("", "535504958@qq.com", define.MailPassword, "smtp.163.com"),
-		&tls.Config{InsecureSkipVerify: true, ServerName: "smtp.163.com"})
+	e.Subject = "【MinIO云盘】您的验证码"
+	e.HTML = []byte(fmt.Sprintf(
+		"<div style=\"font-family:Helvetica,arial,sans-serif;font-size:14px;color:#333\">"+
+			"<p>欢迎使用 MinIO 云盘！</p>"+
+			"<p>您的注册验证码为：<strong style=\"font-size:20px;color:#409eff\">%s</strong></p>"+
+			"<p style=\"color:#999;font-size:12px\">验证码 %d 分钟内有效，请勿泄露给他人。</p>"+
+			"</div>",
+		code, define.CodeExpire/60,
+	))
+	// QQ邮箱 SMTP over SSL，端口 465
+	err := e.SendWithTLS(
+		"smtp.qq.com:465",
+		smtp.PlainAuth("", "535504958@qq.com", define.MailPassword, "smtp.qq.com"),
+		&tls.Config{InsecureSkipVerify: true, ServerName: "smtp.qq.com"},
+	)
 	if err != nil {
-		log.Print(err)
+		log.Print("MailSendCode error:", err)
 		return err
 	}
 	return nil
@@ -123,8 +134,8 @@ func MinIOUpload(r *http.Request) (string, error) {
 }
 
 // Minio 分片上传初始化
+// 返回 objectName（即 key）和 uploadID，两者一致
 func MinioInitPart(ext string) (string, string, error) {
-	// Instantiate new minio client object.
 	core, err := minio.NewCore(
 		define.MinIOEndpoint,
 		&minio.Options{
@@ -134,23 +145,20 @@ func MinioInitPart(ext string) (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
-	key := "breakpoint/" + UUID() + ext
-	uuid := uuid.NewV4().String()
-	bucketName := define.MinIOBucket
-	objectName := strings.TrimPrefix(path.Join(define.MINIO_BASE_PATH, path.Join(uuid[0:1], uuid[1:2], uuid)), "/")
 
-	// objectContentType := "binary/octet-stream"
-	// metadata := make(map[string]string)
-	// metadata["Content-Type"] = objectContentType
-	// putopts := minio.PutObjectOptions{
-	// 	UserMetadata: metadata,
-	// }
-	uploadID, err := core.NewMultipartUpload(context.Background(), bucketName, objectName, minio.PutObjectOptions{})
+	// 生成唯一的对象路径，作为 MinIO objectName 和后续使用的 key
+	id := uuid.NewV4().String()
+	objectName := strings.TrimPrefix(
+		path.Join(define.MINIO_BASE_PATH, path.Join(id[0:1], id[1:2], id)+ext),
+		"/",
+	)
+
+	uploadID, err := core.NewMultipartUpload(context.Background(), define.MinIOBucket, objectName, minio.PutObjectOptions{})
 	if err != nil {
 		return "", "", err
 	}
-	return key, uploadID, nil
-	// return core.NewMultipartUpload(bucketName, objectName, minio.PutObjectOptions{})
+	// key 和 objectName 保持一致，前端传回 key 给 chunk 和 complete 时使用同一路径
+	return objectName, uploadID, nil
 }
 
 // // 分片上传
@@ -218,9 +226,9 @@ type CompleteParts struct {
 	Data []ComplPart `json:"completedParts"`
 }
 
-// // 分片上传完成
+// MinioPartUploadComplete 完成分片上传
+// key 是 MinioInitPart 返回的 objectName，uploadID 是对应的上传 ID
 func MinioPartUploadComplete(key string, uploadID string, mo []minio.CompletePart) error {
-	// Instantiate new minio client object.
 	core, err := minio.NewCore(
 		define.MinIOEndpoint,
 		&minio.Options{
@@ -230,38 +238,18 @@ func MinioPartUploadComplete(key string, uploadID string, mo []minio.CompletePar
 	if err != nil {
 		return err
 	}
-	uuid := uuid.NewV4().String()
-	bucketName := define.MinIOBucket
-	objectName := strings.TrimPrefix(path.Join(define.MINIO_BASE_PATH, path.Join(uuid[0:1], uuid[1:2], uuid)), "/")
-	// var client *minio_ext.Client
-	// partInfos, err := client.ListObjectParts(bucketName, objectName, uploadID)
-	// if err != nil {
-	// 	return err
-	// }
 
 	var complMultipartUpload completeMultipartUpload
-	// for _, partInfo := range partInfos {
-	// 	complMultipartUpload.Parts = append(complMultipartUpload.Parts, minio.CompletePart{
-	// 		PartNumber: partInfo.PartNumber,
-	// 		ETag:       partInfo.ETag,
-	// 	})
-
-	// }
 	complMultipartUpload.Parts = append(complMultipartUpload.Parts, mo...)
 
-	objectContentType := "binary/octet-stream"
-	metadata := make(map[string]string)
-	metadata["Content-Type"] = objectContentType
-	putopts := minio.PutObjectOptions{
-		UserMetadata: metadata,
-	}
-	// Sort all completed parts.
+	// 按 PartNumber 排序
 	sort.Sort(completedParts(complMultipartUpload.Parts))
-	_, err = core.CompleteMultipartUpload(context.Background(), bucketName, objectName, uploadID, complMultipartUpload.Parts, putopts)
-	if err != nil {
-		return err
-	}
 
+	putopts := minio.PutObjectOptions{
+		UserMetadata: map[string]string{"Content-Type": "binary/octet-stream"},
+	}
+	// 使用传入的 key（即 objectName），而非重新生成路径
+	_, err = core.CompleteMultipartUpload(context.Background(), define.MinIOBucket, key, uploadID, complMultipartUpload.Parts, putopts)
 	return err
 }
 

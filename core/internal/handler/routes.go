@@ -114,6 +114,21 @@ func RegisterHandlers(server *rest.Server, serverCtx *svc.ServiceContext) {
 					Path:    "/file/upload/chunk/complete",
 					Handler: FileUploadChunkCompleteHandler(serverCtx),
 				},
+				{
+					Method:  http.MethodGet,
+					Path:    "/user/file/download",
+					Handler: UserFileDownloadHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/user/file/download/batch",
+					Handler: UserFileBatchDownloadHandler(serverCtx),
+				},
+				{
+					Method:  http.MethodPost,
+					Path:    "/user/file/download/folder",
+					Handler: UserFileFolderDownloadHandler(serverCtx),
+				},
 			}...,
 		),
 	)

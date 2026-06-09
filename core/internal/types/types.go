@@ -188,12 +188,33 @@ type LoginReply struct {
 }
 
 type UserDetailRequest struct {
-	Identity string `json:"identity"`
+	Identity string `form:"identity"`
 }
 
 type UserDetailReply struct {
 	Name  string `json:"name"`
 	Email string `json:"email"`
+}
+
+type FileDownloadRequest struct {
+	Identity string `json:"identity"`
+}
+
+type FileDownloadReply struct {
+}
+
+type FileBatchDownloadRequest struct {
+	Identities []string `json:"identities"`
+}
+
+type FileBatchDownloadReply struct {
+}
+
+type FileFolderDownloadRequest struct {
+	Identity string `json:"identity"`
+}
+
+type FileFolderDownloadReply struct {
 }
 
 type MailCodeSendRequest struct {

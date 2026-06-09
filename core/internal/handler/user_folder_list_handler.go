@@ -18,7 +18,7 @@ func UserFolderListHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 		}
 
 		l := logic.NewUserFolderListLogic(r.Context(), svcCtx)
-		resp, err := l.UserFolderList(&req)
+		resp, err := l.UserFolderList(&req, r.Header.Get("UserIdentity"))
 		if err != nil {
 			httpx.ErrorCtx(r.Context(), w, err)
 		} else {
