@@ -25,26 +25,38 @@ func NewShareBasicDetailLogic(ctx context.Context, svcCtx *svc.ServiceContext) *
 	}
 }
 
-// shareDetailResult 用于接收多表JOIN的查询结果
-type shareDetailResult struct {
-	RepositoryIdentity string `xorm:"repository_identity"`
-	Name               string `xorm:"name"`
-	Ext                string `xorm:"ext"`
-	Size               int64  `xorm:"size"`
-	Path               string `xorm:"path"`
-	ExpiredTime        int    `xorm:"expired_time"`
-	CreatedAt          time.Time `xorm:"created_at"`
+// shareDetailRow 接收原始 SQL 查询结果（避免 XORM tag 干扰）
+type shareDetailRow struct {
+	RepositoryIdentity string    `xorm:"repository_identity"`
+	ExpiredTime        int       `xorm:"expired_time"`
+	CreatedAt          time.Time `xorm:"share_created_at"` // 使用别名避免与其他表字段冲突
+	Name               string    `xorm:"name"`
+	Ext                string    `xorm:"ext"`
+	Size               int64     `xorm:"size"`
+	Path               string    `xorm:"path"`
 }
 
 func (l *ShareBasicDetailLogic) ShareBasicDetail(req *types.ShareBasicDetailRequest) (resp *types.ShareBasicDetailReply, err error) {
-	// 先查分享记录，判断是否存在及是否过期
-	result := new(shareDetailResult)
-	has, err := l.svcCtx.Engine.Table("share_basic").
-		Select("share_basic.repository_identity, share_basic.expired_time, share_basic.created_at, user_repository.name, repository_pool.ext, repository_pool.size, repository_pool.path").
-		Join("LEFT", "repository_pool", "share_basic.repository_identity = repository_pool.identity").
-		Join("LEFT", "user_repository", "user_repository.identity = share_basic.user_repository_identity").
-		Where("share_basic.identity = ? AND (share_basic.deleted_at IS NULL OR share_basic.deleted_at = '0001-01-01 00:00:00')", req.Identity).
-		Get(result)
+	// 使用原生 SQL，明确指定 SELECT 别名，避免 XORM 多表 JOIN 字段冲突
+	sqlStr := `
+		SELECT
+			sb.repository_identity,
+			sb.expired_time,
+			sb.created_at AS share_created_at,
+			ur.name,
+			rp.ext,
+			rp.size,
+			rp.path
+		FROM share_basic sb
+		LEFT JOIN repository_pool rp ON sb.repository_identity = rp.identity
+		LEFT JOIN user_repository ur ON ur.identity = sb.user_repository_identity
+		WHERE sb.identity = ?
+		  AND (sb.deleted_at IS NULL OR sb.deleted_at = '0001-01-01 00:00:00')
+		LIMIT 1
+	`
+
+	result := new(shareDetailRow)
+	has, err := l.svcCtx.Engine.SQL(sqlStr, req.Identity).Get(result)
 	if err != nil {
 		return nil, err
 	}
@@ -52,7 +64,7 @@ func (l *ShareBasicDetailLogic) ShareBasicDetail(req *types.ShareBasicDetailRequ
 		return nil, errors.New("分享不存在或已过期")
 	}
 
-	// 判断是否过期（expired_time 为秒数，从 created_at 开始计算）
+	// 判断过期（expired_time 为秒数，从 created_at 开始计算）
 	if result.ExpiredTime > 0 {
 		expireAt := result.CreatedAt.Add(time.Duration(result.ExpiredTime) * time.Second)
 		if time.Now().After(expireAt) {
@@ -60,7 +72,7 @@ func (l *ShareBasicDetailLogic) ShareBasicDetail(req *types.ShareBasicDetailRequ
 		}
 	}
 
-	// 更新点击次数（不影响主流程）
+	// 更新点击次数（忽略错误）
 	l.svcCtx.Engine.Exec("UPDATE share_basic SET click_num = click_num + 1 WHERE identity = ?", req.Identity)
 
 	resp = &types.ShareBasicDetailReply{

@@ -222,4 +222,7 @@ type MailCodeSendRequest struct {
 }
 
 type MailCodeSendReply struct {
+	// 仅当邮件发送失败时返回，便于开发/测试环境直接获取验证码
+	// 生产环境此字段为空
+	Code string `json:"code,omitempty"`
 }

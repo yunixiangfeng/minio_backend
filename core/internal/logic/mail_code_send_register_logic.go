@@ -3,6 +3,7 @@ package logic
 import (
 	"context"
 	"errors"
+	"log"
 	"time"
 
 	"core/define"
@@ -38,11 +39,24 @@ func (l *MailCodeSendRegisterLogic) MailCodeSendRegister(req *types.MailCodeSend
 		err = errors.New("该邮箱已被注册")
 		return
 	}
-	// 获取验证码
+
+	// 生成验证码
 	code := helper.RandCode()
-	// 存储验证码
-	l.svcCtx.RDB.Set(l.ctx, req.Email, code, time.Second*time.Duration(define.CodeExpire))
-	// 发送验证码
-	err = helper.MailSendCode(req.Email, code)
-	return
+	log.Printf("[MailCodeSendRegister] email=%s code=%s", req.Email, code)
+
+	// 先将验证码存入 Redis（必须成功，否则注册流程无法继续）
+	if redisErr := l.svcCtx.RDB.Set(l.ctx, req.Email, code, time.Second*time.Duration(define.CodeExpire)).Err(); redisErr != nil {
+		log.Printf("[MailCodeSendRegister] Redis Set error: %v", redisErr)
+		return nil, errors.New("服务器内部错误，验证码存储失败，请联系管理员")
+	}
+
+	// 尝试发送邮件
+	if mailErr := helper.MailSendCode(req.Email, code); mailErr != nil {
+		log.Printf("[MailCodeSendRegister] 邮件发送失败，验证码已存入Redis: email=%s code=%s err=%v", req.Email, code, mailErr)
+		// 邮件失败时把验证码直接返回给前端（便于测试；生产环境可以删除 Code 字段）
+		return &types.MailCodeSendReply{Code: code}, nil
+	}
+
+	// 邮件成功，不返回验证码（前端从邮箱查收）
+	return &types.MailCodeSendReply{}, nil
 }

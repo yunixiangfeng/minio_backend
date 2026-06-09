@@ -107,8 +107,22 @@ func UUID() string {
 	return uuid.NewV4().String()
 }
 
-// MinIOUpload 上传到自建的minio中
+// MinIOUpload 上传到自建的minio中（原版，保留兼容）
 func MinIOUpload(r *http.Request) (string, error) {
+	file, fileHeader, err := r.FormFile("file")
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	b := make([]byte, fileHeader.Size)
+	if _, err = file.Read(b); err != nil {
+		return "", err
+	}
+	return MinIOUploadBytes(b, fileHeader.Filename, fileHeader.Size)
+}
+
+// MinIOUploadBytes 上传字节数组到 MinIO（避免 http.Request 文件指针二次读取问题）
+func MinIOUploadBytes(data []byte, filename string, size int64) (string, error) {
 	minioClient, err := minio.New(define.MinIOEndpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(define.MinIOAccessKeyID, define.MinIOAccessSecretKey, ""),
 		Secure: define.MinIOSSLBool,
@@ -117,20 +131,26 @@ func MinIOUpload(r *http.Request) (string, error) {
 		return "", err
 	}
 
-	// // 获取文件信息
-	file, fileHeader, err := r.FormFile("file")
+	// 确保 bucket 存在
+	ctx := context.Background()
+	exists, err := minioClient.BucketExists(ctx, define.MinIOBucket)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("检查bucket失败: %v", err)
 	}
-	objectName := UUID() + path.Ext(fileHeader.Filename)
+	if !exists {
+		if err = minioClient.MakeBucket(ctx, define.MinIOBucket, minio.MakeBucketOptions{Region: define.MinIOBucketLocation}); err != nil {
+			return "", fmt.Errorf("创建bucket失败: %v", err)
+		}
+	}
 
-	_, err = minioClient.PutObject(context.Background(), define.MinIOBucket, objectName, file, fileHeader.Size,
+	objectName := UUID() + path.Ext(filename)
+	reader := bytes.NewReader(data)
+	_, err = minioClient.PutObject(ctx, define.MinIOBucket, objectName, reader, size,
 		minio.PutObjectOptions{ContentType: "binary/octet-stream"})
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("PutObject失败: %v", err)
 	}
 	return define.MinIOBucket + "/" + objectName, nil
-
 }
 
 // Minio 分片上传初始化
@@ -146,6 +166,19 @@ func MinioInitPart(ext string) (string, string, error) {
 		return "", "", err
 	}
 
+	// 确保 bucket 存在
+	ctx := context.Background()
+	minioClient, _ := minio.New(define.MinIOEndpoint, &minio.Options{
+		Creds:  credentials.NewStaticV4(define.MinIOAccessKeyID, define.MinIOAccessSecretKey, ""),
+		Secure: define.MinIOSSLBool,
+	})
+	if minioClient != nil {
+		exists, _ := minioClient.BucketExists(ctx, define.MinIOBucket)
+		if !exists {
+			minioClient.MakeBucket(ctx, define.MinIOBucket, minio.MakeBucketOptions{Region: define.MinIOBucketLocation})
+		}
+	}
+
 	// 生成唯一的对象路径，作为 MinIO objectName 和后续使用的 key
 	id := uuid.NewV4().String()
 	objectName := strings.TrimPrefix(
@@ -153,7 +186,7 @@ func MinioInitPart(ext string) (string, string, error) {
 		"/",
 	)
 
-	uploadID, err := core.NewMultipartUpload(context.Background(), define.MinIOBucket, objectName, minio.PutObjectOptions{})
+	uploadID, err := core.NewMultipartUpload(ctx, define.MinIOBucket, objectName, minio.PutObjectOptions{})
 	if err != nil {
 		return "", "", err
 	}

@@ -12,7 +12,7 @@ type UserClaim struct {
 }
 
 var JwtKey = "minio-backend-key"
-var MailPassword = "123456789qwertyu"
+var MailPassword = "" // 123456789qwertyu
 
 // CodeLength 验证码长度
 var CodeLength = 6

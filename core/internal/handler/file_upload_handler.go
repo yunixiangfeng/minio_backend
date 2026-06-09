@@ -26,25 +26,30 @@ func FileUploadHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 		// 获取上传的文件（FormData）
 		file, fileHeader, err := r.FormFile("file")
 		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, fmt.Errorf("获取上传文件失败: %v", err))
 			return
 		}
+		defer file.Close()
 
-		// 判断文件在数据库中是否已经存在
+		// 计算文件 MD5
 		b := make([]byte, fileHeader.Size)
-		_, err = file.Read(b)
-		if err != nil {
+		if _, err = file.Read(b); err != nil {
+			httpx.ErrorCtx(r.Context(), w, fmt.Errorf("读取文件内容失败: %v", err))
 			return
 		}
 		hash := fmt.Sprintf("%x", md5.Sum(b))
+
+		// 判断文件在数据库中是否已经存在（秒传）
 		rp := new(models.RepositoryPool)
 		has, err := svcCtx.Engine.Where("hash = ?", hash).Get(rp)
 		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, err)
 			return
 		}
 
 		if has {
-			// 文件已经存在，直接返回信息
-			httpx.OkJson(w, &types.FileUploadReply{
+			// 秒传：文件已存在，直接返回 identity
+			httpx.OkJsonCtx(r.Context(), w, &types.FileUploadReply{
 				Identity: rp.Identity,
 				Ext:      rp.Ext,
 				Name:     rp.Name,
@@ -52,10 +57,12 @@ func FileUploadHandler(svcCtx *svc.ServiceContext) http.HandlerFunc {
 			return
 		}
 
-		// 往 minio 中存储文件
-		filePath, err := helper.MinIOUpload(r)
-
+		// 往 minio 中存储文件（需要重置文件读取位置）
+		// 由于已经 Read 了全部内容，需要重新 Seek 或重新调用 FormFile
+		// 这里通过直接传 bytes 的方式重写 MinIOUpload
+		filePath, err := helper.MinIOUploadBytes(b, fileHeader.Filename, fileHeader.Size)
 		if err != nil {
+			httpx.ErrorCtx(r.Context(), w, fmt.Errorf("MinIO上传失败: %v", err))
 			return
 		}
 
