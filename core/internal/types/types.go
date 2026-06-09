@@ -57,7 +57,7 @@ type ShareBasicSaveReply struct {
 }
 
 type ShareBasicDetailRequest struct {
-	Identity string `json:"identity,optional"`
+	Identity string `form:"identity,optional"`
 }
 
 type ShareBasicDetailReply struct {
@@ -197,7 +197,7 @@ type UserDetailReply struct {
 }
 
 type FileDownloadRequest struct {
-	Identity string `json:"identity"`
+	Identity string `form:"identity"`
 }
 
 type FileDownloadReply struct {
